@@ -43,6 +43,7 @@
   <UsingTask TaskName="CreateItemAvoidingInference" AssemblyFile="$(WixTasksPath)" />
   <UsingTask TaskName="UpdateProjectReferenceMetadata" AssemblyFile="$(WixTasksPath)" />
   <UsingTask TaskName="CreateProjectReferenceDefineConstantsAndBindPaths" AssemblyFile="$(WixTasksPath)" />
+  <UsingTask TaskName="CreatePackageReferenceDefineConstants" AssemblyFile="$(WixTasksPath)" />
   <UsingTask TaskName="WixAssignCulture" AssemblyFile="$(WixTasksPath)" />
   <UsingTask TaskName="ReadTracking" AssemblyFile="$(WixTasksPath)" />
   <UsingTask TaskName="ResolveWixReferences" AssemblyFile="$(WixTasksPath)" />
@@ -207,6 +208,7 @@
       FindInvalidProjectReferences;
       ResolveNativeProjectReferences;
       _ConvertResolvedProjectReferencesIntoWixConstructs;
+      _ConvertResolvedPackageReferencesIntoWixConstructs;
       ResolveWixLibraryReferences;
       ResolveWixExtensionReferences;
       _CreateProjectDefineConstants;
@@ -347,6 +349,42 @@
     -->
     <ItemGroup>
       <_WixResolvedProjectReference Remove="@(_WixResolvedProjectReference)" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+
+  -->
+  <PropertyGroup>
+    <_ConvertResolvedPackageReferencesIntoWixConstructs></_ConvertResolvedPackageReferencesIntoWixConstructs>
+  </PropertyGroup>
+  <Target
+    Name="_ConvertResolvedPackageReferencesIntoWixConstructs"
+    DependsOnTargets="$(_ConvertResolvedPackageReferencesIntoWixConstructs)"
+    Condition=" '@(PackageReference)' != '' ">
+
+    <!-- Save all the project reference outputs before we start removing -->
+    <ItemGroup>
+      <_WixPackageReference Include="@(PackageReference)">
+        <PathVariable>$([System.String]::Copy('Pkg%(Identity)').Replace('.', '_'))</PathVariable>
+      </_WixPackageReference>
+      <_WixResolvedPackageReference Include="@(_WixPackageReference)">
+        <Name>%(_WixPackageReference.Name)</Name>
+        <Path>$(%(_WixPackageReference.PathVariable))</Path>
+      </_WixResolvedPackageReference>
+    </ItemGroup>
+
+    <CreatePackageReferenceDefineConstants
+      ResolvedPackageReferences="@(_WixResolvedPackageReference)">
+      <Output TaskParameter="DefineConstants" PropertyName="PackageReferenceDefineConstants" />
+    </CreatePackageReferenceDefineConstants>
+
+    <!--
+      Empty the resolved project references to prevent ResolveAssemblyReferences and other C# specific
+      behavior from kicking in
+    -->
+    <ItemGroup>
+      <_WixResolvedPackageReference Remove="@(_WixResolvedPackageReference)" />
     </ItemGroup>
   </Target>
 
@@ -598,7 +636,7 @@
         PdbType="$(DebugType)"
 
         AdditionalOptions="$(CompilerAdditionalOptions) $(LinkerAdditionalOptions)"
-        DefineConstants="$(DefineConstants);$(SolutionDefineConstants);$(ProjectDefineConstants);$(ProjectReferenceDefineConstants)"
+        DefineConstants="$(DefineConstants);$(SolutionDefineConstants);$(ProjectDefineConstants);$(ProjectReferenceDefineConstants);$(PackageReferenceDefineConstants)"
         IncludeSearchPaths="$(IncludeSearchPaths)"
         InstallerPlatform="$(InstallerPlatform)"
         NoLogo="true"
