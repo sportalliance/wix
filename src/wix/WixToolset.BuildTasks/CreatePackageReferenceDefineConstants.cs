@@ -4,7 +4,9 @@ namespace WixToolset.BuildTasks
 {
     using System;
     using System.Collections.Generic;
+    using System.IO;
     using System.Linq;
+    using System.Xml.Linq;
     using Microsoft.Build.Framework;
     using Microsoft.Build.Utilities;
 
@@ -35,17 +37,38 @@ namespace WixToolset.BuildTasks
 
         private void AddDefineConstantsForResolvedReference(IDictionary<string, string> defineConstants, ITaskItem packageReference)
         {
-            var packageName = packageReference.GetMetadata("Name");
-            if (String.IsNullOrWhiteSpace(packageName))
+            var packageDir = packageReference.GetMetadata("Path");
+
+            // Define constants only if a "Path" property exists, i.e., the package must have the property
+            // "GeneratePathProperty" set to true, or it contains a Tools folder.
+            if (!String.IsNullOrWhiteSpace(packageDir))
             {
-                packageName = packageReference.GetMetadata("Identity");
+                var packageName = packageReference.GetMetadata("Identity");
+                var packageFileName = Path.ChangeExtension(packageName, ".nupkg");
+                var packageVersion = this.GetPackageVersion(packageDir, packageName);
+                var referenceName = ToolsCommon.CreateIdentifierFromValue(ToolsCommon.GetMetadataOrDefault(packageReference, "Name", packageName));
+
+                defineConstants[referenceName + ".PackageName"] = packageName;
+                defineConstants[referenceName + ".PackageFileName"] = packageFileName;
+                defineConstants[referenceName + ".Version"] = packageVersion;
+
+                defineConstants[referenceName + ".PackageDir"] = packageDir;
+            }
+        }
+
+        private string GetPackageVersion(string packageDir, string packageName)
+        {
+            var nuspecPath = Path.Combine(packageDir, Path.ChangeExtension(packageName, ".nuspec"));
+            var nuspec = XDocument.Load(nuspecPath);
+            
+            if (nuspec.Root != null)
+            {
+                var ns = nuspec.Root.GetDefaultNamespace();
+
+                return nuspec.Descendants(ns + "metadata").Elements(ns + "version").FirstOrDefault()?.Value;    
             }
 
-            var path = packageReference.GetMetadata("Path");
-            if (!String.IsNullOrWhiteSpace(path))
-            {
-                defineConstants[packageName + ".PackageDir"] = path;
-            }
+            return String.Empty;
         }
     }
 }
