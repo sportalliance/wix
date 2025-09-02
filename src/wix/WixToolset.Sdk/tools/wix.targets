@@ -354,7 +354,20 @@
   </Target>
 
   <!--
+    ================================================================================================
+                                        _ConvertResolvedPackageReferencesIntoWixConstructs
 
+    Converts PackageReference items into WiX define constants for use during compilation.
+    This target processes all resolved package references, creates define constants for each,
+    and then clears the intermediate items to prevent further processing by non-WiX targets.
+
+    [IN]
+    @(PackageReference) - Resolved package references.
+
+    [OUT]
+    $(PackageReferenceDefineConstants) - Define constants from package references.
+    @(_WixResolvedPackageReference) - All resolved package reference items emptied.
+    ================================================================================================
   -->
   <PropertyGroup>
     <_ConvertResolvedPackageReferencesIntoWixConstructs></_ConvertResolvedPackageReferencesIntoWixConstructs>
@@ -364,7 +377,7 @@
     DependsOnTargets="$(_ConvertResolvedPackageReferencesIntoWixConstructs)"
     Condition=" '@(PackageReference)' != '' ">
 
-    <!-- Save all the project reference outputs before we start removing -->
+    <!-- Create internal items for each PackageReference with a unique path variable and resolved metadata. -->
     <ItemGroup>
       <_WixPackageReference Include="@(PackageReference)">
         <PathVariable>$([System.String]::Copy('Pkg%(Identity)').Replace('.', '_'))</PathVariable>
@@ -380,10 +393,7 @@
       <Output TaskParameter="DefineConstants" PropertyName="PackageReferenceDefineConstants" />
     </CreatePackageReferenceDefineConstants>
 
-    <!--
-      Empty the resolved project references to prevent ResolveAssemblyReferences and other C# specific
-      behavior from kicking in
-    -->
+    <!-- Remove all resolved package references to prevent further processing by MSBuild. -->
     <ItemGroup>
       <_WixResolvedPackageReference Remove="@(_WixResolvedPackageReference)" />
     </ItemGroup>

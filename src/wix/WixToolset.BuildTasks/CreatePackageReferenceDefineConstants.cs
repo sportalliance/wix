@@ -8,6 +8,9 @@ namespace WixToolset.BuildTasks
     using Microsoft.Build.Framework;
     using Microsoft.Build.Utilities;
 
+    /// <summary>
+    /// MSBuild task to create a list of preprocessor defines from resolved package references.
+    /// </summary>
     public sealed class CreatePackageReferenceDefineConstants : Task
     {
         [Required]
