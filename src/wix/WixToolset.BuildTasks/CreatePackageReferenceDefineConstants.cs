@@ -44,7 +44,7 @@ namespace WixToolset.BuildTasks
             if (!String.IsNullOrWhiteSpace(packageDir))
             {
                 var packageName = packageReference.GetMetadata("Identity");
-                var packageFileName = Path.ChangeExtension(packageName, ".nupkg");
+                var packageFileName = packageName + ".nupkg";
                 var packageVersion = this.GetPackageVersion(packageDir, packageName);
                 var referenceName = ToolsCommon.CreateIdentifierFromValue(ToolsCommon.GetMetadataOrDefault(packageReference, "Name", packageName));
 
@@ -58,7 +58,7 @@ namespace WixToolset.BuildTasks
 
         private string GetPackageVersion(string packageDir, string packageName)
         {
-            var nuspecPath = Path.Combine(packageDir, Path.ChangeExtension(packageName, ".nuspec"));
+            var nuspecPath = Path.Combine(packageDir, packageName + ".nuspec");
             var nuspec = XDocument.Load(nuspecPath);
             
             if (nuspec.Root != null)
