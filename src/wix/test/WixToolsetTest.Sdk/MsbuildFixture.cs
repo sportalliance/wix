@@ -10,6 +10,7 @@ namespace WixToolsetTest.Sdk
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
+    using System.Text;
     using Microsoft.VisualStudio.TestTools.UnitTesting;
     using WixInternal.MSTestSupport;
     using WixToolset.Dtf.WindowsInstaller;
@@ -757,11 +758,15 @@ namespace WixToolsetTest.Sdk
         }
 
         [TestMethod]
-        [DataRow(BuildSystem.DotNetCoreSdk)]
         [DataRow(BuildSystem.MSBuild)]
-        [DataRow(BuildSystem.MSBuild64)]
-        public void CanResolvePackageReferenceDefineConstants(BuildSystem buildSystem)
+        public void CannotBuildWhenPackageReferenceWithoutGeneratePathProperty(BuildSystem buildSystem)
         {
+            const string packageIdentifier = "TestPackage";
+            const string itemGroup = @"
+                <ItemGroup>
+                    <PackageReference Include=""TestPackage"" Version=""1.2.3"" />
+                </ItemGroup>
+";
             var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
 
             using (var fs = new TestDataFolderFileSystem())
@@ -769,10 +774,340 @@ namespace WixToolsetTest.Sdk
                 fs.Initialize(sourceFolder);
                 var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
                 var binFolder = Path.Combine(baseFolder, @"bin\");
+
                 var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
 
-                var projectPath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj");
-                
+                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
+                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
+                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
+                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
+                File.WriteAllText(wxsPath, wxsContent);
+
+                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
+                var projectPath = Path.ChangeExtension(templatePath, "");
+                var templateContent = File.ReadAllText(templatePath);
+                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
+                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+
+                var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
+                    "-Restore",
+                    MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
+                });
+                var errors = GetDistinctErrorMessages(result.Output, baseFolder);
+                WixAssert.CompareLineByLine(new[]
+                {
+                    @"<basefolder>\Package.wxs(4): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageName)'. [<basefolder>\PackageReferenceDefineConstantsTest.wixproj]",
+                    @"<basefolder>\Package.wxs(5): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageFileName)'. [<basefolder>\PackageReferenceDefineConstantsTest.wixproj]",
+                    @"<basefolder>\Package.wxs(6): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.Version)'. [<basefolder>\PackageReferenceDefineConstantsTest.wixproj]",
+                    @"<basefolder>\Package.wxs(7): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageDir)'. [<basefolder>\PackageReferenceDefineConstantsTest.wixproj]",
+                    @"<basefolder>\Package.wxs(11): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageDir)'. [<basefolder>\PackageReferenceDefineConstantsTest.wixproj]",
+                }, errors);
+            }
+        }
+
+        [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
+        [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
+        public void CanResolvePackageReferenceWithGeneratePathProperty(BuildSystem buildSystem)
+        {
+            const string packageIdentifier = "TestPackage";
+            const string itemGroup = @"
+                <ItemGroup>
+                    <PackageReference Include=""TestPackage"" Version=""1.2.3"">
+                        <Name>TestPackage</Name>
+                        <GeneratePathProperty>true</GeneratePathProperty>
+                    </PackageReference>
+                </ItemGroup>
+";
+
+            var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
+
+            using (var fs = new TestDataFolderFileSystem())
+            {
+                fs.Initialize(sourceFolder);
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
+                var binFolder = Path.Combine(baseFolder, @"bin\");
+
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
+
+                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
+                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
+                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
+                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
+                File.WriteAllText(wxsPath, wxsContent);
+
+                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
+                var projectPath = Path.ChangeExtension(templatePath, "");
+                var templateContent = File.ReadAllText(templatePath);
+                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
+                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+
+                var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
+                    "-Restore",
+                    MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
+                });
+                result.AssertSuccess();
+
+                using (var db = new Database(msiPath, DatabaseOpenMode.ReadOnly))
+                {
+                    const string nameProperty = "CHECK_PACKAGE_NAME";
+                    var packageName = db.ExecutePropertyQuery(nameProperty);
+                    Assert.IsNotNull(packageName, "Property: '{0}' not found.", nameProperty);
+                    WixAssert.StringEqual("TestPackage", packageName);
+
+                    const string fileNameProperty = "CHECK_PACKAGE_FILENAME";
+                    var packageFileName = db.ExecutePropertyQuery(fileNameProperty);
+                    Assert.IsNotNull(packageFileName, "Property: '{0}' not found.", fileNameProperty);
+                    WixAssert.StringEqual("TestPackage.nupkg", packageFileName);
+
+                    const string versionProperty = "CHECK_PACKAGE_VERSION";
+                    var packageVersion = db.ExecutePropertyQuery(versionProperty);
+                    Assert.IsNotNull(packageVersion, "Property: '{0}' not found.", versionProperty);
+                    WixAssert.StringEqual("1.2.3", packageVersion);
+
+                    const string testFilePathProperty = "CHECK_PACKAGE_TEST_FILE_PATH";
+                    var packageTestFilePath = db.ExecutePropertyQuery(testFilePathProperty);
+                    Assert.IsNotNull(packageTestFilePath, "Property: '{0}' not found.", testFilePathProperty);
+                    Assert.IsTrue(File.Exists(packageTestFilePath), "File '{0}' doesn't exists.", packageTestFilePath);
+                }
+            }
+        }
+
+        [TestMethod]
+        [DataRow(BuildSystem.MSBuild)]
+        public void CanResolvePackageReferenceWithoutCustomNameMetadata(BuildSystem buildSystem)
+        {
+            const string packageIdentifier = "TestPackage";
+            const string itemGroup = @"
+                <ItemGroup>
+                    <PackageReference Include=""TestPackage"" Version=""1.2.3"">
+                        <GeneratePathProperty>true</GeneratePathProperty>
+                    </PackageReference>
+                </ItemGroup>
+";
+
+            var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
+
+            using (var fs = new TestDataFolderFileSystem())
+            {
+                fs.Initialize(sourceFolder);
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
+                var binFolder = Path.Combine(baseFolder, @"bin\");
+
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
+
+                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
+                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
+                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
+                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
+                File.WriteAllText(wxsPath, wxsContent);
+
+                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
+                var projectPath = Path.ChangeExtension(templatePath, "");
+                var templateContent = File.ReadAllText(templatePath);
+                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
+                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+
+                var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
+                    "-Restore",
+                    MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
+                });
+                result.AssertSuccess();
+
+                using (var db = new Database(msiPath, DatabaseOpenMode.ReadOnly))
+                {
+                    const string nameProperty = "CHECK_PACKAGE_NAME";
+                    var packageName = db.ExecutePropertyQuery(nameProperty);
+                    Assert.IsNotNull(packageName, "Property: '{0}' not found.", nameProperty);
+                    WixAssert.StringEqual("TestPackage", packageName);
+
+                    const string fileNameProperty = "CHECK_PACKAGE_FILENAME";
+                    var packageFileName = db.ExecutePropertyQuery(fileNameProperty);
+                    Assert.IsNotNull(packageFileName, "Property: '{0}' not found.", fileNameProperty);
+                    WixAssert.StringEqual("TestPackage.nupkg", packageFileName);
+
+                    const string versionProperty = "CHECK_PACKAGE_VERSION";
+                    var packageVersion = db.ExecutePropertyQuery(versionProperty);
+                    Assert.IsNotNull(packageVersion, "Property: '{0}' not found.", versionProperty);
+                    WixAssert.StringEqual("1.2.3", packageVersion);
+
+                    const string testFilePathProperty = "CHECK_PACKAGE_TEST_FILE_PATH";
+                    var packageTestFilePath = db.ExecutePropertyQuery(testFilePathProperty);
+                    Assert.IsNotNull(packageTestFilePath, "Property: '{0}' not found.", testFilePathProperty);
+                    Assert.IsTrue(File.Exists(packageTestFilePath), "File '{0}' doesn't exists.", packageTestFilePath);
+                }
+            }
+        }
+
+        [TestMethod]
+        [DataRow(BuildSystem.MSBuild)]
+        public void CanResolvePackageReferenceWithCustomNameMetadata(BuildSystem buildSystem)
+        {
+            const string packageIdentifier = "New.Test.Package";
+            const string itemGroup = @"
+                <ItemGroup>
+                    <PackageReference Include=""TestPackage"" Version=""1.2.3"">
+                        <Name>New.Test.Package</Name>
+                        <GeneratePathProperty>true</GeneratePathProperty>
+                    </PackageReference>
+                </ItemGroup>
+";
+
+            var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
+
+            using (var fs = new TestDataFolderFileSystem())
+            {
+                fs.Initialize(sourceFolder);
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
+                var binFolder = Path.Combine(baseFolder, @"bin\");
+
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
+
+                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
+                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
+                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
+                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
+                File.WriteAllText(wxsPath, wxsContent);
+
+                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
+                var projectPath = Path.ChangeExtension(templatePath, "");
+                var templateContent = File.ReadAllText(templatePath);
+                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
+                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+
+                var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
+                    "-Restore",
+                    MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
+                });
+                result.AssertSuccess();
+
+                using (var db = new Database(msiPath, DatabaseOpenMode.ReadOnly))
+                {
+                    const string nameProperty = "CHECK_PACKAGE_NAME";
+                    var packageName = db.ExecutePropertyQuery(nameProperty);
+                    Assert.IsNotNull(packageName, "Property: '{0}' not found.", nameProperty);
+                    WixAssert.StringEqual("TestPackage", packageName);
+
+                    const string fileNameProperty = "CHECK_PACKAGE_FILENAME";
+                    var packageFileName = db.ExecutePropertyQuery(fileNameProperty);
+                    Assert.IsNotNull(packageFileName, "Property: '{0}' not found.", fileNameProperty);
+                    WixAssert.StringEqual("TestPackage.nupkg", packageFileName);
+
+                    const string versionProperty = "CHECK_PACKAGE_VERSION";
+                    var packageVersion = db.ExecutePropertyQuery(versionProperty);
+                    Assert.IsNotNull(packageVersion, "Property: '{0}' not found.", versionProperty);
+                    WixAssert.StringEqual("1.2.3", packageVersion);
+
+                    const string testFilePathProperty = "CHECK_PACKAGE_TEST_FILE_PATH";
+                    var packageTestFilePath = db.ExecutePropertyQuery(testFilePathProperty);
+                    Assert.IsNotNull(packageTestFilePath, "Property: '{0}' not found.", testFilePathProperty);
+                    Assert.IsTrue(File.Exists(packageTestFilePath), "File '{0}' doesn't exists.", packageTestFilePath);
+                }
+            }
+        }
+
+        [TestMethod]
+        [DataRow(BuildSystem.MSBuild)]
+        public void CanResolvePackageReferenceWithFixedVersion(BuildSystem buildSystem)
+        {
+            const string packageIdentifier = "TestPackage";
+            const string itemGroup = @"
+                <ItemGroup>
+                    <PackageReference Include=""TestPackage"" Version=""[1.2.3]"">
+                        <GeneratePathProperty>true</GeneratePathProperty>
+                    </PackageReference>
+                </ItemGroup>
+";
+
+            var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
+
+            using (var fs = new TestDataFolderFileSystem())
+            {
+                fs.Initialize(sourceFolder);
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
+                var binFolder = Path.Combine(baseFolder, @"bin\");
+
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
+
+                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
+                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
+                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
+                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
+                File.WriteAllText(wxsPath, wxsContent);
+
+                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
+                var projectPath = Path.ChangeExtension(templatePath, "");
+                var templateContent = File.ReadAllText(templatePath);
+                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
+                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+
+                var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
+                    "-Restore",
+                    MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
+                });
+                result.AssertSuccess();
+
+                using (var db = new Database(msiPath, DatabaseOpenMode.ReadOnly))
+                {
+                    const string nameProperty = "CHECK_PACKAGE_NAME";
+                    var packageName = db.ExecutePropertyQuery(nameProperty);
+                    Assert.IsNotNull(packageName, "Property: '{0}' not found.", nameProperty);
+                    WixAssert.StringEqual("TestPackage", packageName);
+
+                    const string fileNameProperty = "CHECK_PACKAGE_FILENAME";
+                    var packageFileName = db.ExecutePropertyQuery(fileNameProperty);
+                    Assert.IsNotNull(packageFileName, "Property: '{0}' not found.", fileNameProperty);
+                    WixAssert.StringEqual("TestPackage.nupkg", packageFileName);
+
+                    const string versionProperty = "CHECK_PACKAGE_VERSION";
+                    var packageVersion = db.ExecutePropertyQuery(versionProperty);
+                    Assert.IsNotNull(packageVersion, "Property: '{0}' not found.", versionProperty);
+                    WixAssert.StringEqual("1.2.3", packageVersion);
+
+                    const string testFilePathProperty = "CHECK_PACKAGE_TEST_FILE_PATH";
+                    var packageTestFilePath = db.ExecutePropertyQuery(testFilePathProperty);
+                    Assert.IsNotNull(packageTestFilePath, "Property: '{0}' not found.", testFilePathProperty);
+                    Assert.IsTrue(File.Exists(packageTestFilePath), "File '{0}' doesn't exists.", packageTestFilePath);
+                }
+            }
+        }
+
+        [TestMethod]
+        [DataRow(BuildSystem.MSBuild)]
+        public void CanResolvePackageReferenceWithFloatingVersion(BuildSystem buildSystem)
+        {
+            const string packageIdentifier = "TestPackage";
+            const string itemGroup = @"
+                <ItemGroup>
+                    <PackageReference Include=""TestPackage"" Version=""1.2.3-beta.*"">
+                        <GeneratePathProperty>true</GeneratePathProperty>
+                    </PackageReference>
+                </ItemGroup>
+";
+
+            var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
+
+            using (var fs = new TestDataFolderFileSystem())
+            {
+                fs.Initialize(sourceFolder);
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
+                var binFolder = Path.Combine(baseFolder, @"bin\");
+
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
+
+                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
+                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
+                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
+                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
+                File.WriteAllText(wxsPath, wxsContent);
+
+                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
+                var projectPath = Path.ChangeExtension(templatePath, "");
+                var templateContent = File.ReadAllText(templatePath);
+                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
+                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+
                 var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
                     "-Restore",
                     MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
