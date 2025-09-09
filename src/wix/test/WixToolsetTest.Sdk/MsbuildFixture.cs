@@ -10,8 +10,10 @@ namespace WixToolsetTest.Sdk
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
+    using System.Text;
     using Microsoft.VisualStudio.TestTools.UnitTesting;
     using WixInternal.MSTestSupport;
+    using WixToolset.Dtf.WindowsInstaller;
 
     [TestClass]
     public class MsbuildFixture
@@ -752,6 +754,287 @@ namespace WixToolsetTest.Sdk
                     @"release_net6_x64\e_sqlite3.dll - 1601536",
                     @"release_net6_x86\e_sqlite3.dll - 1207296",
                 }, releaseFileSizes);
+            }
+        }
+
+        [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
+        [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
+        public void CannotBuildWhenPackageReferenceWithoutGeneratePathProperty(BuildSystem buildSystem)
+        {
+            var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
+
+            using (var fs = new TestDataFolderFileSystem())
+            {
+                fs.Initialize(sourceFolder);
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithoutGeneratePathProperty");
+                var binFolder = Path.Combine(baseFolder, @"bin\");
+
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithoutGeneratePathProperty.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "TestPackage.wxs");
+
+                var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
+                    "-Restore",
+                    MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
+                });
+                var errors = GetDistinctErrorMessages(result.Output, baseFolder);
+                WixAssert.CompareLineByLine(new[]
+                {
+                    @"<basefolder>\TestPackage.wxs(6): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.Version)'. [<basefolder>\PackageReferenceWithoutGeneratePathProperty.wixproj]",
+                    @"<basefolder>\TestPackage.wxs(7): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageDir)'. [<basefolder>\PackageReferenceWithoutGeneratePathProperty.wixproj]",
+                    @"<basefolder>\TestPackage.wxs(11): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageDir)'. [<basefolder>\PackageReferenceWithoutGeneratePathProperty.wixproj]",
+                }, errors);
+            }
+        }
+
+        [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
+        [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
+        public void CanResolvePackageReferenceWithGeneratePathProperty(BuildSystem buildSystem)
+        {
+            var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
+
+            using (var fs = new TestDataFolderFileSystem())
+            {
+                fs.Initialize(sourceFolder);
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithGeneratePathProperty");
+                var binFolder = Path.Combine(baseFolder, @"bin\");
+
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithGeneratePathProperty.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "TestPackage.wxs");
+
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceWithGeneratePathProperty.msi");
+
+                var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
+                    "-Restore",
+                    MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
+                });
+                result.AssertSuccess();
+
+                using (var db = new Database(msiPath, DatabaseOpenMode.ReadOnly))
+                {
+                    const string nameProperty = "CHECK_PACKAGE_NAME";
+                    var packageName = db.ExecutePropertyQuery(nameProperty);
+                    Assert.IsNotNull(packageName, "Property: '{0}' not found.", nameProperty);
+                    WixAssert.StringEqual("TestPackage", packageName);
+
+                    const string fileNameProperty = "CHECK_PACKAGE_FILENAME";
+                    var packageFileName = db.ExecutePropertyQuery(fileNameProperty);
+                    Assert.IsNotNull(packageFileName, "Property: '{0}' not found.", fileNameProperty);
+                    WixAssert.StringEqual("TestPackage.nupkg", packageFileName);
+
+                    const string versionProperty = "CHECK_PACKAGE_VERSION";
+                    var packageVersion = db.ExecutePropertyQuery(versionProperty);
+                    Assert.IsNotNull(packageVersion, "Property: '{0}' not found.", versionProperty);
+                    WixAssert.StringEqual("1.2.3", packageVersion);
+
+                    const string testFilePathProperty = "CHECK_PACKAGE_TEST_FILE_PATH";
+                    var packageTestFilePath = db.ExecutePropertyQuery(testFilePathProperty);
+                    Assert.IsNotNull(packageTestFilePath, "Property: '{0}' not found.", testFilePathProperty);
+                    Assert.IsTrue(File.Exists(packageTestFilePath), "File '{0}' doesn't exists.", packageTestFilePath);
+                }
+            }
+        }
+
+        [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
+        [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
+        public void CanResolvePackageReferenceWithoutCustomNameMetadata(BuildSystem buildSystem)
+        {
+            var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
+
+            using (var fs = new TestDataFolderFileSystem())
+            {
+                fs.Initialize(sourceFolder);
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithoutCustomNameMetadata");
+                var binFolder = Path.Combine(baseFolder, @"bin\");
+
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithoutCustomNameMetadata.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "TestPackage.wxs");
+
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceWithoutCustomNameMetadata.msi");
+
+                var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
+                    "-Restore",
+                    MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
+                });
+                result.AssertSuccess();
+
+                using (var db = new Database(msiPath, DatabaseOpenMode.ReadOnly))
+                {
+                    const string nameProperty = "CHECK_PACKAGE_NAME";
+                    var packageName = db.ExecutePropertyQuery(nameProperty);
+                    Assert.IsNotNull(packageName, "Property: '{0}' not found.", nameProperty);
+                    WixAssert.StringEqual("TestPackage", packageName);
+
+                    const string fileNameProperty = "CHECK_PACKAGE_FILENAME";
+                    var packageFileName = db.ExecutePropertyQuery(fileNameProperty);
+                    Assert.IsNotNull(packageFileName, "Property: '{0}' not found.", fileNameProperty);
+                    WixAssert.StringEqual("TestPackage.nupkg", packageFileName);
+
+                    const string versionProperty = "CHECK_PACKAGE_VERSION";
+                    var packageVersion = db.ExecutePropertyQuery(versionProperty);
+                    Assert.IsNotNull(packageVersion, "Property: '{0}' not found.", versionProperty);
+                    WixAssert.StringEqual("1.2.3", packageVersion);
+
+                    const string testFilePathProperty = "CHECK_PACKAGE_TEST_FILE_PATH";
+                    var packageTestFilePath = db.ExecutePropertyQuery(testFilePathProperty);
+                    Assert.IsNotNull(packageTestFilePath, "Property: '{0}' not found.", testFilePathProperty);
+                    Assert.IsTrue(File.Exists(packageTestFilePath), "File '{0}' doesn't exists.", packageTestFilePath);
+                }
+            }
+        }
+
+        [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
+        [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
+        public void CanResolvePackageReferenceWithCustomNameMetadata(BuildSystem buildSystem)
+        {
+            var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
+
+            using (var fs = new TestDataFolderFileSystem())
+            {
+                fs.Initialize(sourceFolder);
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithCustomNameMetadata");
+                var binFolder = Path.Combine(baseFolder, @"bin\");
+
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithCustomNameMetadata.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "New.Test.Package.wxs");
+
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceWithCustomNameMetadata.msi");
+
+                var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
+                    "-Restore",
+                    MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
+                });
+                result.AssertSuccess();
+
+                using (var db = new Database(msiPath, DatabaseOpenMode.ReadOnly))
+                {
+                    const string nameProperty = "CHECK_PACKAGE_NAME";
+                    var packageName = db.ExecutePropertyQuery(nameProperty);
+                    Assert.IsNotNull(packageName, "Property: '{0}' not found.", nameProperty);
+                    WixAssert.StringEqual("TestPackage", packageName);
+
+                    const string fileNameProperty = "CHECK_PACKAGE_FILENAME";
+                    var packageFileName = db.ExecutePropertyQuery(fileNameProperty);
+                    Assert.IsNotNull(packageFileName, "Property: '{0}' not found.", fileNameProperty);
+                    WixAssert.StringEqual("TestPackage.nupkg", packageFileName);
+
+                    const string versionProperty = "CHECK_PACKAGE_VERSION";
+                    var packageVersion = db.ExecutePropertyQuery(versionProperty);
+                    Assert.IsNotNull(packageVersion, "Property: '{0}' not found.", versionProperty);
+                    WixAssert.StringEqual("1.2.3", packageVersion);
+
+                    const string testFilePathProperty = "CHECK_PACKAGE_TEST_FILE_PATH";
+                    var packageTestFilePath = db.ExecutePropertyQuery(testFilePathProperty);
+                    Assert.IsNotNull(packageTestFilePath, "Property: '{0}' not found.", testFilePathProperty);
+                    Assert.IsTrue(File.Exists(packageTestFilePath), "File '{0}' doesn't exists.", packageTestFilePath);
+                }
+            }
+        }
+
+        [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
+        [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
+        public void CanResolvePackageReferenceWithFixedVersion(BuildSystem buildSystem)
+        {
+            var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
+
+            using (var fs = new TestDataFolderFileSystem())
+            {
+                fs.Initialize(sourceFolder);
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithFixedVersion");
+                var binFolder = Path.Combine(baseFolder, @"bin\");
+
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithFixedVersion.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "TestPackage.wxs");
+
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceWithFixedVersion.msi");
+
+                var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
+                    "-Restore",
+                    MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
+                });
+                result.AssertSuccess();
+
+                using (var db = new Database(msiPath, DatabaseOpenMode.ReadOnly))
+                {
+                    const string nameProperty = "CHECK_PACKAGE_NAME";
+                    var packageName = db.ExecutePropertyQuery(nameProperty);
+                    Assert.IsNotNull(packageName, "Property: '{0}' not found.", nameProperty);
+                    WixAssert.StringEqual("TestPackage", packageName);
+
+                    const string fileNameProperty = "CHECK_PACKAGE_FILENAME";
+                    var packageFileName = db.ExecutePropertyQuery(fileNameProperty);
+                    Assert.IsNotNull(packageFileName, "Property: '{0}' not found.", fileNameProperty);
+                    WixAssert.StringEqual("TestPackage.nupkg", packageFileName);
+
+                    const string versionProperty = "CHECK_PACKAGE_VERSION";
+                    var packageVersion = db.ExecutePropertyQuery(versionProperty);
+                    Assert.IsNotNull(packageVersion, "Property: '{0}' not found.", versionProperty);
+                    WixAssert.StringEqual("1.2.3", packageVersion);
+
+                    const string testFilePathProperty = "CHECK_PACKAGE_TEST_FILE_PATH";
+                    var packageTestFilePath = db.ExecutePropertyQuery(testFilePathProperty);
+                    Assert.IsNotNull(packageTestFilePath, "Property: '{0}' not found.", testFilePathProperty);
+                    Assert.IsTrue(File.Exists(packageTestFilePath), "File '{0}' doesn't exists.", packageTestFilePath);
+                }
+            }
+        }
+
+        [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
+        [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
+        public void CanResolvePackageReferenceWithFloatingVersion(BuildSystem buildSystem)
+        {
+            var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
+
+            using (var fs = new TestDataFolderFileSystem())
+            {
+                fs.Initialize(sourceFolder);
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithFloatingVersion");
+                var binFolder = Path.Combine(baseFolder, @"bin\");
+
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithFloatingVersion.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "TestPackage.wxs");
+
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceWithFloatingVersion.msi");
+
+                var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
+                    "-Restore",
+                    MsbuildUtilities.GetQuotedPropertySwitch(buildSystem, "WixMSBuildProps", MsbuildFixture.WixPropsPath)
+                });
+                result.AssertSuccess();
+
+                using (var db = new Database(msiPath, DatabaseOpenMode.ReadOnly))
+                {
+                    const string nameProperty = "CHECK_PACKAGE_NAME";
+                    var packageName = db.ExecutePropertyQuery(nameProperty);
+                    Assert.IsNotNull(packageName, "Property: '{0}' not found.", nameProperty);
+                    WixAssert.StringEqual("TestPackage", packageName);
+
+                    const string fileNameProperty = "CHECK_PACKAGE_FILENAME";
+                    var packageFileName = db.ExecutePropertyQuery(fileNameProperty);
+                    Assert.IsNotNull(packageFileName, "Property: '{0}' not found.", fileNameProperty);
+                    WixAssert.StringEqual("TestPackage.nupkg", packageFileName);
+
+                    const string versionProperty = "CHECK_PACKAGE_VERSION";
+                    var packageVersion = db.ExecutePropertyQuery(versionProperty);
+                    Assert.IsNotNull(packageVersion, "Property: '{0}' not found.", versionProperty);
+                    WixAssert.StringEqual("1.2.3", packageVersion);
+
+                    const string testFilePathProperty = "CHECK_PACKAGE_TEST_FILE_PATH";
+                    var packageTestFilePath = db.ExecutePropertyQuery(testFilePathProperty);
+                    Assert.IsNotNull(packageTestFilePath, "Property: '{0}' not found.", testFilePathProperty);
+                    Assert.IsTrue(File.Exists(packageTestFilePath), "File '{0}' doesn't exists.", packageTestFilePath);
+                }
             }
         }
 
