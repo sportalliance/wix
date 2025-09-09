@@ -758,36 +758,21 @@ namespace WixToolsetTest.Sdk
         }
 
         [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
         [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
         public void CannotBuildWhenPackageReferenceWithoutGeneratePathProperty(BuildSystem buildSystem)
         {
-            const string packageIdentifier = "TestPackage";
-            const string itemGroup = @"
-                <ItemGroup>
-                    <PackageReference Include=""TestPackage"" Version=""1.2.3"" />
-                </ItemGroup>
-";
             var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
 
             using (var fs = new TestDataFolderFileSystem())
             {
                 fs.Initialize(sourceFolder);
-                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithoutGeneratePathProperty");
                 var binFolder = Path.Combine(baseFolder, @"bin\");
 
-                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
-
-                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
-                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
-                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
-                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
-                File.WriteAllText(wxsPath, wxsContent);
-
-                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
-                var projectPath = Path.ChangeExtension(templatePath, "");
-                var templateContent = File.ReadAllText(templatePath);
-                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
-                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithoutGeneratePathProperty.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "TestPackage.wxs");
 
                 var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
                     "-Restore",
@@ -796,11 +781,9 @@ namespace WixToolsetTest.Sdk
                 var errors = GetDistinctErrorMessages(result.Output, baseFolder);
                 WixAssert.CompareLineByLine(new[]
                 {
-                    @"<basefolder>\Package.wxs(4): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageName)'. [<basefolder>\PackageReferenceDefineConstantsTest.wixproj]",
-                    @"<basefolder>\Package.wxs(5): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageFileName)'. [<basefolder>\PackageReferenceDefineConstantsTest.wixproj]",
-                    @"<basefolder>\Package.wxs(6): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.Version)'. [<basefolder>\PackageReferenceDefineConstantsTest.wixproj]",
-                    @"<basefolder>\Package.wxs(7): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageDir)'. [<basefolder>\PackageReferenceDefineConstantsTest.wixproj]",
-                    @"<basefolder>\Package.wxs(11): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageDir)'. [<basefolder>\PackageReferenceDefineConstantsTest.wixproj]",
+                    @"<basefolder>\TestPackage.wxs(6): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.Version)'. [<basefolder>\PackageReferenceWithoutGeneratePathProperty.wixproj]",
+                    @"<basefolder>\TestPackage.wxs(7): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageDir)'. [<basefolder>\PackageReferenceWithoutGeneratePathProperty.wixproj]",
+                    @"<basefolder>\TestPackage.wxs(11): error WIX0150: Undefined preprocessor variable '$(var.TestPackage.PackageDir)'. [<basefolder>\PackageReferenceWithoutGeneratePathProperty.wixproj]",
                 }, errors);
             }
         }
@@ -811,37 +794,18 @@ namespace WixToolsetTest.Sdk
         [DataRow(BuildSystem.MSBuild64)]
         public void CanResolvePackageReferenceWithGeneratePathProperty(BuildSystem buildSystem)
         {
-            const string packageIdentifier = "TestPackage";
-            const string itemGroup = @"
-                <ItemGroup>
-                    <PackageReference Include=""TestPackage"" Version=""1.2.3"">
-                        <Name>TestPackage</Name>
-                        <GeneratePathProperty>true</GeneratePathProperty>
-                    </PackageReference>
-                </ItemGroup>
-";
-
             var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
 
             using (var fs = new TestDataFolderFileSystem())
             {
                 fs.Initialize(sourceFolder);
-                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithGeneratePathProperty");
                 var binFolder = Path.Combine(baseFolder, @"bin\");
 
-                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithGeneratePathProperty.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "TestPackage.wxs");
 
-                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
-                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
-                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
-                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
-                File.WriteAllText(wxsPath, wxsContent);
-
-                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
-                var projectPath = Path.ChangeExtension(templatePath, "");
-                var templateContent = File.ReadAllText(templatePath);
-                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
-                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceWithGeneratePathProperty.msi");
 
                 var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
                     "-Restore",
@@ -875,39 +839,23 @@ namespace WixToolsetTest.Sdk
         }
 
         [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
         [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
         public void CanResolvePackageReferenceWithoutCustomNameMetadata(BuildSystem buildSystem)
         {
-            const string packageIdentifier = "TestPackage";
-            const string itemGroup = @"
-                <ItemGroup>
-                    <PackageReference Include=""TestPackage"" Version=""1.2.3"">
-                        <GeneratePathProperty>true</GeneratePathProperty>
-                    </PackageReference>
-                </ItemGroup>
-";
-
             var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
 
             using (var fs = new TestDataFolderFileSystem())
             {
                 fs.Initialize(sourceFolder);
-                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithoutCustomNameMetadata");
                 var binFolder = Path.Combine(baseFolder, @"bin\");
 
-                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithoutCustomNameMetadata.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "TestPackage.wxs");
 
-                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
-                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
-                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
-                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
-                File.WriteAllText(wxsPath, wxsContent);
-
-                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
-                var projectPath = Path.ChangeExtension(templatePath, "");
-                var templateContent = File.ReadAllText(templatePath);
-                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
-                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceWithoutCustomNameMetadata.msi");
 
                 var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
                     "-Restore",
@@ -941,40 +889,23 @@ namespace WixToolsetTest.Sdk
         }
 
         [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
         [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
         public void CanResolvePackageReferenceWithCustomNameMetadata(BuildSystem buildSystem)
         {
-            const string packageIdentifier = "New.Test.Package";
-            const string itemGroup = @"
-                <ItemGroup>
-                    <PackageReference Include=""TestPackage"" Version=""1.2.3"">
-                        <Name>New.Test.Package</Name>
-                        <GeneratePathProperty>true</GeneratePathProperty>
-                    </PackageReference>
-                </ItemGroup>
-";
-
             var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
 
             using (var fs = new TestDataFolderFileSystem())
             {
                 fs.Initialize(sourceFolder);
-                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithCustomNameMetadata");
                 var binFolder = Path.Combine(baseFolder, @"bin\");
 
-                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithCustomNameMetadata.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "New.Test.Package.wxs");
 
-                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
-                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
-                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
-                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
-                File.WriteAllText(wxsPath, wxsContent);
-
-                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
-                var projectPath = Path.ChangeExtension(templatePath, "");
-                var templateContent = File.ReadAllText(templatePath);
-                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
-                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceWithCustomNameMetadata.msi");
 
                 var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
                     "-Restore",
@@ -1008,39 +939,23 @@ namespace WixToolsetTest.Sdk
         }
 
         [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
         [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
         public void CanResolvePackageReferenceWithFixedVersion(BuildSystem buildSystem)
         {
-            const string packageIdentifier = "TestPackage";
-            const string itemGroup = @"
-                <ItemGroup>
-                    <PackageReference Include=""TestPackage"" Version=""[1.2.3]"">
-                        <GeneratePathProperty>true</GeneratePathProperty>
-                    </PackageReference>
-                </ItemGroup>
-";
-
             var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
 
             using (var fs = new TestDataFolderFileSystem())
             {
                 fs.Initialize(sourceFolder);
-                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithFixedVersion");
                 var binFolder = Path.Combine(baseFolder, @"bin\");
 
-                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithFixedVersion.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "TestPackage.wxs");
 
-                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
-                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
-                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
-                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
-                File.WriteAllText(wxsPath, wxsContent);
-
-                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
-                var projectPath = Path.ChangeExtension(templatePath, "");
-                var templateContent = File.ReadAllText(templatePath);
-                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
-                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceWithFixedVersion.msi");
 
                 var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
                     "-Restore",
@@ -1074,39 +989,23 @@ namespace WixToolsetTest.Sdk
         }
 
         [TestMethod]
+        [DataRow(BuildSystem.DotNetCoreSdk)]
         [DataRow(BuildSystem.MSBuild)]
+        [DataRow(BuildSystem.MSBuild64)]
         public void CanResolvePackageReferenceWithFloatingVersion(BuildSystem buildSystem)
         {
-            const string packageIdentifier = "TestPackage";
-            const string itemGroup = @"
-                <ItemGroup>
-                    <PackageReference Include=""TestPackage"" Version=""1.2.3-beta.*"">
-                        <GeneratePathProperty>true</GeneratePathProperty>
-                    </PackageReference>
-                </ItemGroup>
-";
-
             var sourceFolder = TestData.Get("TestData", "PackageReferenceDefineConstants");
 
             using (var fs = new TestDataFolderFileSystem())
             {
                 fs.Initialize(sourceFolder);
-                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceDefineConstants");
+                var baseFolder = Path.Combine(fs.BaseFolder, "PackageReferenceWithFloatingVersion");
                 var binFolder = Path.Combine(baseFolder, @"bin\");
 
-                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceDefineConstantsTest.msi");
+                var projectPath = Path.Combine(baseFolder, "PackageReferenceWithFloatingVersion.wixproj");
+                var wxsPath = Path.Combine(baseFolder, "TestPackage.wxs");
 
-                var wxsTemplatePath = Path.Combine(baseFolder, "Package.wxs.template");
-                var wxsPath = Path.ChangeExtension(wxsTemplatePath, "");
-                var wxsTemplate = File.ReadAllText(wxsTemplatePath);
-                var wxsContent = wxsTemplate.Replace(".__PACKAGE_IDENTIFIER__.", $".{packageIdentifier}.");
-                File.WriteAllText(wxsPath, wxsContent);
-
-                var templatePath = Path.Combine(baseFolder, "PackageReferenceDefineConstantsTest.wixproj.template");
-                var projectPath = Path.ChangeExtension(templatePath, "");
-                var templateContent = File.ReadAllText(templatePath);
-                var projectContent = templateContent.Replace("<!--PACKAGE_REFERENCES-->", itemGroup);
-                File.WriteAllText(projectPath, projectContent, Encoding.UTF8);
+                var msiPath = Path.Combine(binFolder, "Release", "PackageReferenceWithFloatingVersion.msi");
 
                 var result = MsbuildUtilities.BuildProject(buildSystem, projectPath, new[] {
                     "-Restore",

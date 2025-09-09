@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <Import Project="$(WixMSBuildProps)" />
+
+  <ItemGroup>
+      <PackageReference Include="TestPackage" Version="1.2.3">
+          <Name>New.Test.Package</Name>
+          <GeneratePathProperty>true</GeneratePathProperty>
+      </PackageReference>
+  </ItemGroup>
+
+  <Import Project="$(WixTargetsPath)" />
+</Project>
