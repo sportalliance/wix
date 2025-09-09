@@ -37,22 +37,28 @@ namespace WixToolset.BuildTasks
 
         private void AddDefineConstantsForResolvedReference(IDictionary<string, string> defineConstants, ITaskItem packageReference)
         {
+            var packageName = packageReference.GetMetadata("Identity");
+            var packageFileName = packageName + ".nupkg";
+            var referenceName = ToolsCommon.CreateIdentifierFromValue(ToolsCommon.GetMetadataOrDefault(packageReference, "Name", packageName));
+
+            defineConstants[referenceName + ".PackageName"] = packageName;
+            defineConstants[referenceName + ".PackageFileName"] = packageFileName;
+
             var packageDir = packageReference.GetMetadata("Path");
 
-            // Define constants only if a "Path" property exists, i.e., the package must have the property
+            // Only if a "Path" property exists => i.e., the package must have the property
             // "GeneratePathProperty" set to true, or it contains a Tools folder.
             if (!String.IsNullOrWhiteSpace(packageDir))
             {
-                var packageName = packageReference.GetMetadata("Identity");
-                var packageFileName = packageName + ".nupkg";
                 var packageVersion = this.GetPackageVersion(packageDir, packageName);
-                var referenceName = ToolsCommon.CreateIdentifierFromValue(ToolsCommon.GetMetadataOrDefault(packageReference, "Name", packageName));
-
-                defineConstants[referenceName + ".PackageName"] = packageName;
-                defineConstants[referenceName + ".PackageFileName"] = packageFileName;
+                
                 defineConstants[referenceName + ".Version"] = packageVersion;
-
+                if (!packageDir.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+                {
+                    packageDir = String.Concat(packageDir, Path.DirectorySeparatorChar);
+                }
                 defineConstants[referenceName + ".PackageDir"] = packageDir;
+                defineConstants[referenceName + ".PackagePath"] = Path.Combine(packageDir, packageFileName);
             }
         }
 
